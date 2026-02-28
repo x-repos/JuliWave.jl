@@ -80,7 +80,7 @@ function save_ppm(filename, field; vmin=minimum(field), vmax=maximum(field))
         println(io, "P3")
         println(io, "$nx_img $ny_img")
         println(io, "255")
-        for jj in ny_img:-1:1
+        for jj in 1:ny_img
             for ii in 1:nx_img
                 v = clamp((field[ii, jj] - vmin) / span, 0.0, 1.0)
                 r = round(Int, 68 + 170 * v)

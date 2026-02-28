@@ -103,7 +103,7 @@ function save_ppm(filename, field; power=0.3)
         println(io, "P3")
         println(io, "$nx_img $ny_img")
         println(io, "255")
-        for jj in ny_img:-1:1
+        for jj in 1:ny_img
             for ii in 1:nx_img
                 v = clamp(field[ii, jj] / maxamp, -1.0, 1.0)
                 if abs(v) < 0.01
