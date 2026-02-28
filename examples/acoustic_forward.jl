@@ -7,8 +7,8 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using JuliWave
 
 # Grid setup
-nx, ny = 201, 201
-dx, dy = 1.5, 1.5  # meters
+nx, ny = 501, 501
+dx, dy = 15, 15  # meters
 grid = Grid2D(nx, ny, dx, dy)
 
 # Homogeneous velocity model
@@ -19,8 +19,8 @@ rho = fill(rho_val, nx, ny)
 model = AcousticModel2D(vp, rho, grid)
 
 # Source: Ricker wavelet at center of model
-f0 = 35.0  # Hz
-src = PointSource(150.0, 150.0, RickerWavelet(f0))
+f0 = 5.0  # Hz
+src = PointSource(2500.0, 2500.0, RickerWavelet(f0))
 
 # Receivers: line of receivers
 receivers = [Receiver(50.0 + i * 10.0, 250.0) for i in 0:19]
@@ -28,13 +28,13 @@ geometry = Geometry([src], receivers)
 
 # Time stepping
 dt = suggest_dt(vp_val, dx, dy; courant_target=0.5)
-nt = 500
+nt = 2000
 config = SimulationConfig(nt, dt; pml_points=10)
 
 println("Grid: $(nx) x $(ny), dx=$(dx) m")
 println("Velocity: $(vp_val) m/s, Density: $(rho_val) kg/m³")
-println("Source: Ricker f0=$(f0) Hz at (150, 150) m")
-println("Time steps: $(nt), dt=$(round(dt*1e6, digits=1)) μs")
+println("Source: Ricker f0=$(f0) Hz at (750, 750) m")
+println("Time steps: $(nt), dt=$(round(dt*1e3, digits=1)) ms")
 println("Courant number: $(round(check_cfl(vp_val, dt, dx, dy), digits=3))")
 println()
 
