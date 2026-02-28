@@ -14,9 +14,12 @@ function simulate_elastic(model::ElasticModel2D, geometry::Geometry,
     dt = config.dt
     nt = config.nt
 
+    # FD coefficients
+    coeffs = fd_coefficients(config.space_order)
+
     # Check CFL condition
     vp_max = maximum(model.vp)
-    check_cfl(vp_max, dt, dx, dy)
+    check_cfl(vp_max, dt, dx, dy; space_order=config.space_order)
 
     # Get dominant frequency from first source
     f0 = geometry.sources[1].wavelet.f0
@@ -66,10 +69,10 @@ function simulate_elastic(model::ElasticModel2D, geometry::Geometry,
         # Time stepping
         for it in 1:nt
             # Stress update from velocity gradients
-            elastic_stress_update!(state, lambda, mu, cpml, nx, ny, dx, dy, dt)
+            elastic_stress_update!(state, lambda, mu, cpml, nx, ny, dx, dy, dt, coeffs)
 
             # Velocity update from stress divergence
-            elastic_velocity_update!(state, model.rho, cpml, nx, ny, dx, dy, dt)
+            elastic_velocity_update!(state, model.rho, cpml, nx, ny, dx, dy, dt, coeffs)
 
             # Source injection
             force_x = sin(angle_rad) * source_ts[it]
@@ -103,8 +106,11 @@ function simulate_elastic_wavefield(model::ElasticModel2D, geometry::Geometry,
     dt = config.dt
     nt = config.nt
 
+    # FD coefficients
+    coeffs = fd_coefficients(config.space_order)
+
     vp_max = maximum(model.vp)
-    check_cfl(vp_max, dt, dx, dy)
+    check_cfl(vp_max, dt, dx, dy; space_order=config.space_order)
 
     f0 = geometry.sources[1].wavelet.f0
     cpml = setup_cpml(grid, config, vp_max, f0; backend=backend)
@@ -128,8 +134,8 @@ function simulate_elastic_wavefield(model::ElasticModel2D, geometry::Geometry,
     angle_rad = src.angle * π / 180.0
 
     for it in 1:nt
-        elastic_stress_update!(state, lambda, mu, cpml, nx, ny, dx, dy, dt)
-        elastic_velocity_update!(state, model.rho, cpml, nx, ny, dx, dy, dt)
+        elastic_stress_update!(state, lambda, mu, cpml, nx, ny, dx, dy, dt, coeffs)
+        elastic_velocity_update!(state, model.rho, cpml, nx, ny, dx, dy, dt, coeffs)
 
         force_x = sin(angle_rad) * source_ts[it]
         force_y = cos(angle_rad) * source_ts[it]

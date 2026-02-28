@@ -49,8 +49,10 @@ struct SimulationConfig
     pml_Rcoef::Float64
     pml_npower::Float64
     pml_kmax::Float64
+    space_order::Int
 end
 
-function SimulationConfig(nt, dt; pml_points=10, pml_Rcoef=0.001, pml_npower=2.0, pml_kmax=1.0)
-    SimulationConfig(nt, dt, pml_points, pml_Rcoef, pml_npower, pml_kmax)
+function SimulationConfig(nt, dt; pml_points=10, pml_Rcoef=0.001, pml_npower=2.0, pml_kmax=1.0,
+                          space_order=2)
+    SimulationConfig(nt, dt, pml_points, pml_Rcoef, pml_npower, pml_kmax, space_order)
 end

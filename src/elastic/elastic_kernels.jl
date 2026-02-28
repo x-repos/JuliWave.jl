@@ -1,24 +1,28 @@
 # Elastic kernel functions translated from seismic_CPML_2D_isotropic_second_order.f90
 
 """
-    elastic_stress_update!(state, lambda, mu, cpml, nx, ny, dx, dy, dt)
+    elastic_stress_update!(state, lambda, mu, cpml, nx, ny, dx, dy, dt, coeffs)
 
 Update stress fields (sigma_xx, sigma_yy, sigma_xy) from velocity gradients.
 Includes CPML memory variable updates.
 """
 function elastic_stress_update!(state::ElasticState2D, lambda::AbstractMatrix,
                                 mu::AbstractMatrix, cpml::CPML2D,
-                                nx::Int, ny::Int, dx::Float64, dy::Float64, dt::Float64)
-    # sigma_xx, sigma_yy update (i=1:NX-1, j=2:NY)
-    @inbounds for j in 2:ny
-        for i in 1:(nx-1)
-            # Interpolate material parameters at staggered location
+                                nx::Int, ny::Int, dx::Float64, dy::Float64, dt::Float64,
+                                coeffs::NTuple{N,Float64}) where N
+    hw = N
+
+    # sigma_xx, sigma_yy update
+    # dvx/dx at i+1/2: i = hw:(nx-hw)
+    # dvy/dy backward at j (forward from j-1): j = (hw+1):(ny-hw+1)
+    @inbounds for j in (hw+1):(ny-hw+1)
+        for i in hw:(nx-hw)
             lambda_half_x = 0.5 * (lambda[i+1, j] + lambda[i, j])
             mu_half_x = 0.5 * (mu[i+1, j] + mu[i, j])
             lambda_plus_2mu = lambda_half_x + 2.0 * mu_half_x
 
-            val_dvx_dx = (state.vx[i+1, j] - state.vx[i, j]) / dx
-            val_dvy_dy = (state.vy[i, j] - state.vy[i, j-1]) / dy
+            val_dvx_dx = fd_stencil_x(state.vx, i, j, coeffs, dx)
+            val_dvy_dy = fd_stencil_y(state.vy, i, j-1, coeffs, dy)
 
             state.mem_dvx_dx[i, j] = cpml.x.b_half[i] * state.mem_dvx_dx[i, j] +
                                       cpml.x.a_half[i] * val_dvx_dx
@@ -33,13 +37,15 @@ function elastic_stress_update!(state::ElasticState2D, lambda::AbstractMatrix,
         end
     end
 
-    # sigma_xy update (i=2:NX, j=1:NY-1)
-    @inbounds for j in 1:(ny-1)
-        for i in 2:nx
+    # sigma_xy update
+    # dvy/dx backward at i (forward from i-1): i = (hw+1):(nx-hw+1)
+    # dvx/dy at j+1/2: j = hw:(ny-hw)
+    @inbounds for j in hw:(ny-hw)
+        for i in (hw+1):(nx-hw+1)
             mu_half_y = 0.5 * (mu[i, j+1] + mu[i, j])
 
-            val_dvy_dx = (state.vy[i, j] - state.vy[i-1, j]) / dx
-            val_dvx_dy = (state.vx[i, j+1] - state.vx[i, j]) / dy
+            val_dvy_dx = fd_stencil_x(state.vy, i-1, j, coeffs, dx)
+            val_dvx_dy = fd_stencil_y(state.vx, i, j, coeffs, dy)
 
             state.mem_dvy_dx[i, j] = cpml.x.b[i] * state.mem_dvy_dx[i, j] +
                                       cpml.x.a[i] * val_dvy_dx
@@ -57,19 +63,24 @@ function elastic_stress_update!(state::ElasticState2D, lambda::AbstractMatrix,
 end
 
 """
-    elastic_velocity_update!(state, rho, cpml, nx, ny, dx, dy, dt)
+    elastic_velocity_update!(state, rho, cpml, nx, ny, dx, dy, dt, coeffs)
 
 Update velocity fields (vx, vy) from stress divergence.
 Includes CPML memory variable updates.
 """
 function elastic_velocity_update!(state::ElasticState2D, rho::AbstractMatrix,
                                   cpml::CPML2D, nx::Int, ny::Int,
-                                  dx::Float64, dy::Float64, dt::Float64)
-    # vx update (i=2:NX, j=2:NY)
-    @inbounds for j in 2:ny
-        for i in 2:nx
-            val_dsxx_dx = (state.sigma_xx[i, j] - state.sigma_xx[i-1, j]) / dx
-            val_dsxy_dy = (state.sigma_xy[i, j] - state.sigma_xy[i, j-1]) / dy
+                                  dx::Float64, dy::Float64, dt::Float64,
+                                  coeffs::NTuple{N,Float64}) where N
+    hw = N
+
+    # vx update
+    # dsxx/dx backward at i (forward from i-1): i = (hw+1):(nx-hw+1)
+    # dsxy/dy backward at j (forward from j-1): j = (hw+1):(ny-hw+1)
+    @inbounds for j in (hw+1):(ny-hw+1)
+        for i in (hw+1):(nx-hw+1)
+            val_dsxx_dx = fd_stencil_x(state.sigma_xx, i-1, j, coeffs, dx)
+            val_dsxy_dy = fd_stencil_y(state.sigma_xy, i, j-1, coeffs, dy)
 
             state.mem_dsxx_dx[i, j] = cpml.x.b[i] * state.mem_dsxx_dx[i, j] +
                                        cpml.x.a[i] * val_dsxx_dx
@@ -83,14 +94,15 @@ function elastic_velocity_update!(state::ElasticState2D, rho::AbstractMatrix,
         end
     end
 
-    # vy update (i=1:NX-1, j=1:NY-1)
-    @inbounds for j in 1:(ny-1)
-        for i in 1:(nx-1)
-            # Interpolate density at staggered location
+    # vy update
+    # dsxy/dx at i+1/2: i = hw:(nx-hw)
+    # dsyy/dy at j+1/2: j = hw:(ny-hw)
+    @inbounds for j in hw:(ny-hw)
+        for i in hw:(nx-hw)
             rho_half = 0.25 * (rho[i, j] + rho[i+1, j] + rho[i+1, j+1] + rho[i, j+1])
 
-            val_dsxy_dx = (state.sigma_xy[i+1, j] - state.sigma_xy[i, j]) / dx
-            val_dsyy_dy = (state.sigma_yy[i, j+1] - state.sigma_yy[i, j]) / dy
+            val_dsxy_dx = fd_stencil_x(state.sigma_xy, i, j, coeffs, dx)
+            val_dsyy_dy = fd_stencil_y(state.sigma_yy, i, j, coeffs, dy)
 
             state.mem_dsxy_dx[i, j] = cpml.x.b_half[i] * state.mem_dsxy_dx[i, j] +
                                        cpml.x.a_half[i] * val_dsxy_dx

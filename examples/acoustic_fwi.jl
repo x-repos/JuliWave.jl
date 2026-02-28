@@ -67,3 +67,35 @@ println("Initial misfit: $(misfit_init)")
 println("Misfit reduction: $(round((1 - Optim.minimum(result)/misfit_init)*100, digits=1))%")
 println("Max recovered vp: $(maximum(model_opt.vp))")
 println("Min recovered vp: $(minimum(model_opt.vp))")
+
+# Save velocity models as PPM images
+outdir = joinpath(@__DIR__, "output", "acoustic_fwi")
+mkpath(outdir)
+
+function save_ppm(filename, field; vmin=minimum(field), vmax=maximum(field))
+    nx_img, ny_img = size(field)
+    span = vmax - vmin
+    span == 0.0 && (span = 1.0)
+    open(filename, "w") do io
+        println(io, "P3")
+        println(io, "$nx_img $ny_img")
+        println(io, "255")
+        for jj in ny_img:-1:1
+            for ii in 1:nx_img
+                v = clamp((field[ii, jj] - vmin) / span, 0.0, 1.0)
+                r = round(Int, 68 + 170 * v)
+                g = round(Int, 1 + 254 * v * (1 - v) * 2)
+                b = round(Int, 84 + 170 * (1 - v))
+                print(io, "$r $g $b ")
+            end
+            println(io)
+        end
+    end
+end
+
+vmin, vmax = minimum(vp_true), maximum(vp_true)
+save_ppm(joinpath(outdir, "vp_true.ppm"), vp_true; vmin, vmax)
+save_ppm(joinpath(outdir, "vp_initial.ppm"), vp_init; vmin, vmax)
+save_ppm(joinpath(outdir, "vp_recovered.ppm"), model_opt.vp; vmin, vmax)
+
+println("\nSaved PPM images to: $outdir")

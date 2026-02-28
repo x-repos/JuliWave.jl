@@ -2,20 +2,22 @@
 # These use explicit loops for Enzyme compatibility.
 
 """
-    acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy)
+    acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy, coeffs)
 
 Compute first spatial derivatives of pressure divided by density, with CPML.
 Translated from Fortran: dp/dx at half-grid, dp/dy at half-grid.
 """
 function acoustic_first_derivatives!(state::AcousticState2D, model::AcousticModel2D,
-                                     cpml::CPML2D, nx::Int, ny::Int, dx::Float64, dy::Float64)
+                                     cpml::CPML2D, nx::Int, ny::Int, dx::Float64, dy::Float64,
+                                     coeffs::NTuple{N,Float64}) where N
     p = state.pressure_present
     rho = model.rho
+    hw = N  # half-width of stencil
 
-    # dp/dx (i=1:NX-1, j=1:NY)
+    # dp/dx at i+1/2 (i=hw:nx-hw, j=1:ny)
     @inbounds for j in 1:ny
-        for i in 1:(nx-1)
-            val = (p[i+1, j] - p[i, j]) / dx
+        for i in hw:(nx-hw)
+            val = fd_stencil_x(p, i, j, coeffs, dx)
 
             state.mem_dp_dx[i, j] = cpml.x.b_half[i] * state.mem_dp_dx[i, j] +
                                      cpml.x.a_half[i] * val
@@ -27,10 +29,10 @@ function acoustic_first_derivatives!(state::AcousticState2D, model::AcousticMode
         end
     end
 
-    # dp/dy (i=1:NX, j=1:NY-1)
-    @inbounds for j in 1:(ny-1)
+    # dp/dy at j+1/2 (i=1:nx, j=hw:ny-hw)
+    @inbounds for j in hw:(ny-hw)
         for i in 1:nx
-            val = (p[i, j+1] - p[i, j]) / dy
+            val = fd_stencil_y(p, i, j, coeffs, dy)
 
             state.mem_dp_dy[i, j] = cpml.y.b_half[j] * state.mem_dp_dy[i, j] +
                                      cpml.y.a_half[j] * val
@@ -46,17 +48,21 @@ function acoustic_first_derivatives!(state::AcousticState2D, model::AcousticMode
 end
 
 """
-    acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy)
+    acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy, coeffs)
 
 Compute second spatial derivatives with CPML.
 d(pressure_xx)/dx and d(pressure_yy)/dy at full grid points.
 """
 function acoustic_second_derivatives!(state::AcousticState2D, cpml::CPML2D,
-                                      nx::Int, ny::Int, dx::Float64, dy::Float64)
-    # d(pressure_xx)/dx (i=2:NX, j=1:NY)
+                                      nx::Int, ny::Int, dx::Float64, dy::Float64,
+                                      coeffs::NTuple{N,Float64}) where N
+    hw = N
+
+    # d(pressure_xx)/dx at i (backward = forward from i-1)
+    # i = (hw+1):(nx-hw+1)
     @inbounds for j in 1:ny
-        for i in 2:nx
-            val = (state.pressure_xx[i, j] - state.pressure_xx[i-1, j]) / dx
+        for i in (hw+1):(nx-hw+1)
+            val = fd_stencil_x(state.pressure_xx, i-1, j, coeffs, dx)
 
             state.mem_dpxx_dx[i, j] = cpml.x.b[i] * state.mem_dpxx_dx[i, j] +
                                        cpml.x.a[i] * val
@@ -67,10 +73,11 @@ function acoustic_second_derivatives!(state::AcousticState2D, cpml::CPML2D,
         end
     end
 
-    # d(pressure_yy)/dy (i=1:NX, j=2:NY)
-    @inbounds for j in 2:ny
+    # d(pressure_yy)/dy at j (backward = forward from j-1)
+    # j = (hw+1):(ny-hw+1)
+    @inbounds for j in (hw+1):(ny-hw+1)
         for i in 1:nx
-            val = (state.pressure_yy[i, j] - state.pressure_yy[i, j-1]) / dy
+            val = fd_stencil_y(state.pressure_yy, i, j-1, coeffs, dy)
 
             state.mem_dpyy_dy[i, j] = cpml.y.b[j] * state.mem_dpyy_dy[i, j] +
                                        cpml.y.a[j] * val

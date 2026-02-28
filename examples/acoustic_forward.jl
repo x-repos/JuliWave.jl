@@ -48,9 +48,40 @@ println("Snapshot size: $(size(snapshots))")
 println("Max pressure in seismograms: $(maximum(abs.(seismograms)))")
 println("Number of snapshots: $(size(snapshots, 3))")
 
-# Print some wavefield statistics
-for i in 1:size(snapshots, 3)
-    t = (i-1) * 50 * dt
-    maxp = maximum(abs.(snapshots[:, :, i]))
-    println("  Snapshot $(i) (t=$(round(t*1000, digits=2)) ms): max|p| = $(maxp)")
+# Save wavefield snapshots as PPM images
+outdir = joinpath(@__DIR__, "output", "acoustic_forward")
+mkpath(outdir)
+
+function save_ppm(filename, field; power=0.3)
+    nx_img, ny_img = size(field)
+    maxamp = maximum(abs.(field))
+    maxamp == 0.0 && (maxamp = 1.0)
+    open(filename, "w") do io
+        println(io, "P3")
+        println(io, "$nx_img $ny_img")
+        println(io, "255")
+        for jj in ny_img:-1:1
+            for ii in 1:nx_img
+                v = clamp(field[ii, jj] / maxamp, -1.0, 1.0)
+                if abs(v) < 0.01
+                    print(io, "255 255 255 ")
+                elseif v >= 0
+                    r = round(Int, 255 * v^power)
+                    print(io, "$r 0 0 ")
+                else
+                    b = round(Int, 255 * abs(v)^power)
+                    print(io, "0 0 $b ")
+                end
+            end
+            println(io)
+        end
+    end
 end
+
+for i in 1:size(snapshots, 3)
+    t_ms = round((i - 1) * 50 * dt * 1000, digits=1)
+    save_ppm(joinpath(outdir, "pressure_$(lpad(i, 3, '0')).ppm"), snapshots[:, :, i])
+    println("  Saved snapshot $i (t=$(t_ms) ms)")
+end
+
+println("\nSnapshots saved to: $outdir")

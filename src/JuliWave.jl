@@ -8,6 +8,7 @@ include("grid.jl")
 include("sources.jl")
 include("receivers.jl")
 include("cpml.jl")
+include("fd_coefficients.jl")
 include("utils.jl")
 
 # Acoustic solver
@@ -47,6 +48,9 @@ export simulate_elastic, simulate_elastic_wavefield
 
 # Exports - FWI
 export l2_misfit, compute_gradient_fd, fwi
+
+# Exports - FD coefficients
+export fd_coefficients, fd_stencil_x, fd_stencil_y
 
 # Exports - Utils
 export check_cfl, suggest_dt, select_backend

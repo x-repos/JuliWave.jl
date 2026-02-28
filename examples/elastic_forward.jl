@@ -7,7 +7,7 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 using JuliWave
 
 # Grid setup
-nx, ny = 101, 101
+nx, ny = 401, 201
 dx, dy = 10.0, 10.0  # meters
 grid = Grid2D(nx, ny, dx, dy)
 
@@ -23,7 +23,7 @@ model = ElasticModel2D(vp, vs, rho, grid)
 # Source: first derivative of Gaussian at off-center position
 f0 = 7.0  # Hz
 wavelet = GaussianDerivativeWavelet(f0; amplitude=1e7)
-src = PointSource(500.0, 700.0, wavelet; angle=135.0)
+src = PointSource(2000.0, 700.0, wavelet; angle=135.0)
 
 # Receivers
 receivers = [Receiver(300.0, 300.0), Receiver(700.0, 300.0)]
@@ -53,7 +53,7 @@ println("Max |vy|: $(maximum(abs.(seis_vy)))")
 println("Snapshots: $(size(snaps_vx, 3)) frames")
 
 # Save wavefield snapshots as PPM images
-outdir = joinpath(@__DIR__, "..", "output")
+outdir = joinpath(@__DIR__, "output", "elastic_forward")
 mkpath(outdir)
 
 function save_ppm(filename, field; power=0.3)

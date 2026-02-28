@@ -14,9 +14,12 @@ function simulate_acoustic(model::AcousticModel2D, geometry::Geometry,
     dt = config.dt
     nt = config.nt
 
+    # FD coefficients
+    coeffs = fd_coefficients(config.space_order)
+
     # Check CFL condition
     vp_max = maximum(model.vp)
-    check_cfl(vp_max, dt, dx, dy)
+    check_cfl(vp_max, dt, dx, dy; space_order=config.space_order)
 
     # Get dominant frequency from first source wavelet
     f0 = geometry.sources[1].wavelet.f0
@@ -60,10 +63,10 @@ function simulate_acoustic(model::AcousticModel2D, geometry::Geometry,
         # Time stepping
         for it in 1:nt
             # First spatial derivatives / rho
-            acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy)
+            acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy, coeffs)
 
             # Second spatial derivatives
-            acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy)
+            acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy, coeffs)
 
             # Time update with source injection and Dirichlet BCs
             acoustic_time_update!(state, kappa, source_ts[it], isrc, jsrc, dt, nx, ny, cp_src)
@@ -95,8 +98,11 @@ function simulate_acoustic_wavefield(model::AcousticModel2D, geometry::Geometry,
     dt = config.dt
     nt = config.nt
 
+    # FD coefficients
+    coeffs = fd_coefficients(config.space_order)
+
     vp_max = maximum(model.vp)
-    check_cfl(vp_max, dt, dx, dy)
+    check_cfl(vp_max, dt, dx, dy; space_order=config.space_order)
 
     f0 = geometry.sources[1].wavelet.f0
     cpml = setup_cpml(grid, config, vp_max, f0; backend=backend)
@@ -117,8 +123,8 @@ function simulate_acoustic_wavefield(model::AcousticModel2D, geometry::Geometry,
     source_ts = compute_source_timeseries(src.wavelet, nt, dt)
 
     for it in 1:nt
-        acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy)
-        acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy)
+        acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy, coeffs)
+        acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy, coeffs)
         acoustic_time_update!(state, kappa, source_ts[it], isrc, jsrc, dt, nx, ny, cp_src)
         record_receivers!(seismograms, state.pressure_future, rec_indices, it)
 
