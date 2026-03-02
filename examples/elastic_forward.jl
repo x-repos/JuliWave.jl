@@ -6,6 +6,9 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using JuliWave
 
+# Simulation parameters
+space_order = 2
+
 # Grid setup
 nx, ny = 401, 201
 dx, dy = 10.0, 10.0  # meters
@@ -30,15 +33,17 @@ receivers = [Receiver(300.0, 300.0), Receiver(700.0, 300.0)]
 geometry = Geometry([src], receivers)
 
 # Time stepping
-dt = suggest_dt(vp_val, dx, dy; courant_target=0.4)
+dt = suggest_dt(vp_val, dx, dy; courant_target=0.4, space_order=space_order)
 nt = 500
-config = SimulationConfig(nt, dt; pml_points=10)
+free_surface = true
+config = SimulationConfig(nt, dt; pml_points=10, space_order=space_order, free_surface=free_surface)
 
 println("Grid: $(nx) x $(ny), dx=$(dx) m")
 println("Vp: $(vp_val) m/s, Vs: $(round(vs_val, digits=1)) m/s")
 println("Source angle: 135° from Y axis")
 println("Time steps: $(nt), dt=$(round(dt*1e3, digits=3)) ms")
-println("Courant number: $(round(check_cfl(vp_val, dt, dx, dy), digits=3))")
+println("Courant number: $(round(check_cfl(vp_val, dt, dx, dy; space_order=space_order), digits=3))")
+println("Free surface: $(free_surface)")
 println()
 
 # Run simulation with wavefield snapshots
@@ -54,6 +59,7 @@ println("Snapshots: $(size(snaps_vx, 3)) frames")
 
 # Save wavefield snapshots as PPM images
 outdir = joinpath(@__DIR__, "output", "elastic_forward")
+rm(outdir; force=true, recursive=true)
 mkpath(outdir)
 
 function save_ppm(filename, field; power=0.3)

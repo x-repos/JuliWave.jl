@@ -58,4 +58,109 @@ using JuliWave
         @test !any(isnan, snaps_vx)
         @test !any(isnan, snaps_vy)
     end
+
+    @testset "Free surface" begin
+        config_fs = SimulationConfig(nt, dt; pml_points=10, free_surface=true)
+
+        @testset "Basic simulation runs" begin
+            seis_vx, seis_vy = simulate_elastic(model, geometry, config_fs)
+            @test size(seis_vx) == (nt, 2)
+            @test size(seis_vy) == (nt, 2)
+            @test !any(isnan, seis_vx)
+            @test !any(isnan, seis_vy)
+            @test !any(isinf, seis_vx)
+            @test !any(isinf, seis_vy)
+            @test maximum(abs.(seis_vx)) < 1e25
+            @test maximum(abs.(seis_vy)) < 1e25
+        end
+
+        @testset "Wavefield simulation" begin
+            seis_vx, seis_vy, snaps_vx, snaps_vy = simulate_elastic_wavefield(
+                model, geometry, config_fs; save_every=50)
+            @test size(snaps_vx, 1) == nx
+            @test size(snaps_vx, 2) == ny
+            @test !any(isnan, snaps_vx)
+            @test !any(isnan, snaps_vy)
+        end
+    end
+
+    @testset "Pressure source" begin
+        # Pressure source at center
+        src_p = PointSource(500.0, 500.0, wavelet)
+        geometry_p = Geometry([src_p], [rec1, rec2])
+
+        @testset "Basic simulation runs" begin
+            seis_vx, seis_vy = simulate_elastic(model, geometry_p, config; src_type=:pressure)
+            @test size(seis_vx) == (nt, 2)
+            @test size(seis_vy) == (nt, 2)
+            @test !any(isnan, seis_vx)
+            @test !any(isnan, seis_vy)
+            @test !any(isinf, seis_vx)
+            @test !any(isinf, seis_vy)
+            @test maximum(abs.(seis_vx)) < 1e25
+            @test maximum(abs.(seis_vy)) < 1e25
+        end
+
+        @testset "Produces non-zero output" begin
+            seis_vx, seis_vy = simulate_elastic(model, geometry_p, config; src_type=:pressure)
+            @test maximum(abs.(seis_vx)) > 0.0
+            @test maximum(abs.(seis_vy)) > 0.0
+        end
+
+        @testset "Isotropic radiation (symmetric receivers)" begin
+            # Symmetric receivers equidistant from center source
+            rec_left = Receiver(300.0, 500.0)
+            rec_right = Receiver(700.0, 500.0)
+            geom_sym = Geometry([src_p], [rec_left, rec_right])
+            seis_vx, seis_vy = simulate_elastic(model, geom_sym, config; src_type=:pressure)
+            # Pressure source is isotropic: symmetric receivers should see similar amplitudes
+            max_left_vx = maximum(abs.(seis_vx[:, 1]))
+            max_right_vx = maximum(abs.(seis_vx[:, 2]))
+            # vx should be antisymmetric (opposite sign), so amplitudes should be similar
+            # staggered grid introduces slight asymmetry, so use 15% tolerance
+            @test isapprox(max_left_vx, max_right_vx, rtol=0.15)
+        end
+
+        @testset "Wavefield simulation" begin
+            seis_vx, seis_vy, snaps_vx, snaps_vy = simulate_elastic_wavefield(
+                model, geometry_p, config; save_every=50, src_type=:pressure)
+            @test size(snaps_vx, 1) == nx
+            @test size(snaps_vx, 2) == ny
+            @test !any(isnan, snaps_vx)
+            @test !any(isnan, snaps_vy)
+        end
+
+        @testset "With free surface" begin
+            config_fs = SimulationConfig(nt, dt; pml_points=10, free_surface=true)
+            seis_vx, seis_vy = simulate_elastic(model, geometry_p, config_fs; src_type=:pressure)
+            @test !any(isnan, seis_vx)
+            @test !any(isnan, seis_vy)
+            @test !any(isinf, seis_vx)
+            @test !any(isinf, seis_vy)
+            @test maximum(abs.(seis_vx)) < 1e25
+            @test maximum(abs.(seis_vy)) < 1e25
+        end
+    end
+
+    @testset "Higher-order FD (space_order=$order)" for order in [4, 8]
+        dt_ho = suggest_dt(vp_val, dx, dy; courant_target=0.4, space_order=order)
+        config_ho = SimulationConfig(nt, dt_ho; pml_points=10, space_order=order)
+
+        seis_vx, seis_vy = simulate_elastic(model, geometry, config_ho)
+        @test size(seis_vx) == (nt, 2)
+        @test size(seis_vy) == (nt, 2)
+        @test !any(isnan, seis_vx)
+        @test !any(isnan, seis_vy)
+        @test !any(isinf, seis_vx)
+        @test !any(isinf, seis_vy)
+        @test maximum(abs.(seis_vx)) < 1e25
+        @test maximum(abs.(seis_vy)) < 1e25
+
+        svx, svy, snvx, snvy = simulate_elastic_wavefield(
+            model, geometry, config_ho; save_every=50)
+        @test size(snvx, 1) == nx
+        @test size(snvx, 2) == ny
+        @test !any(isnan, snvx)
+        @test !any(isnan, snvy)
+    end
 end

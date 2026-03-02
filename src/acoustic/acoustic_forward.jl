@@ -24,18 +24,40 @@ function simulate_acoustic(model::AcousticModel2D, geometry::Geometry,
     # Get dominant frequency from first source wavelet
     f0 = geometry.sources[1].wavelet.f0
 
-    # Setup CPML coefficients
+    # Setup CPML coefficients on original grid
     cpml = setup_cpml(grid, config, vp_max, f0; backend=backend)
 
+    # Disable PML at the top boundary for free surface
+    if config.free_surface
+        _disable_cpml_left!(cpml.y, config.pml_points)
+    end
+
+    # Ghost cell padding for higher-order FD stencils
+    pad = length(coeffs) - 1
+    nxp, nyp = nx + 2 * pad, ny + 2 * pad
+
+    if pad > 0
+        vp_pad = pad_array(model.vp, pad)
+        rho_pad = pad_array(model.rho, pad)
+        grid_pad = Grid2D(nxp, nyp, dx, dy)
+        model_pad = AcousticModel2D(vp_pad, rho_pad, grid_pad)
+        cpml = pad_cpml(cpml, pad)
+    else
+        model_pad = model
+        rho_pad = model.rho
+        vp_pad = model.vp
+    end
+
     # Precompute kappa (bulk modulus) = rho * vp²
-    kappa = model.rho .* model.vp .^ 2
+    kappa = rho_pad .* vp_pad .^ 2
 
-    # Initialize state
-    state = AcousticState2D(nx, ny; backend=backend)
+    # Initialize state with padded dimensions
+    state = AcousticState2D(nxp, nyp; backend=backend)
 
-    # Snap receivers to grid
+    # Snap receivers to grid (physical coordinates)
     rec_indices = snap_receivers(geometry.receivers, grid)
     nrec = length(rec_indices)
+    rec_indices_pad = [(i + pad, j + pad) for (i, j) in rec_indices]
     seismograms = zeros(Float64, nt, nrec)
 
     # Process each source (sequential shot gather)
@@ -53,9 +75,10 @@ function simulate_acoustic(model::AcousticModel2D, geometry::Geometry,
         state.mem_dpxx_dx .= 0.0
         state.mem_dpyy_dy .= 0.0
 
-        # Source grid position
+        # Source grid position (physical grid, then offset)
         isrc, jsrc = snap_to_grid(src.x, src.y, grid)
         cp_src = model.vp[isrc, jsrc]
+        isrc_pad, jsrc_pad = isrc + pad, jsrc + pad
 
         # Precompute source time series
         source_ts = compute_source_timeseries(src.wavelet, nt, dt)
@@ -63,16 +86,22 @@ function simulate_acoustic(model::AcousticModel2D, geometry::Geometry,
         # Time stepping
         for it in 1:nt
             # First spatial derivatives / rho
-            acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy, coeffs)
+            acoustic_first_derivatives!(state, model_pad, cpml, nxp, nyp, dx, dy, coeffs)
 
             # Second spatial derivatives
-            acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy, coeffs)
+            acoustic_second_derivatives!(state, cpml, nxp, nyp, dx, dy, coeffs)
 
             # Time update with source injection and Dirichlet BCs
-            acoustic_time_update!(state, kappa, source_ts[it], isrc, jsrc, dt, nx, ny, cp_src)
+            acoustic_time_update!(state, kappa, source_ts[it], isrc_pad, jsrc_pad,
+                                  dt, nxp, nyp, cp_src; pad=pad)
+
+            # Free surface: p=0 at top + mirror into ghost cells
+            if config.free_surface
+                acoustic_apply_free_surface!(state, nxp, nyp, pad)
+            end
 
             # Record receivers
-            record_receivers!(seismograms, state.pressure_future, rec_indices, it)
+            record_receivers!(seismograms, state.pressure_future, rec_indices_pad, it)
 
             # Rotate time levels
             state.pressure_past, state.pressure_present, state.pressure_future =
@@ -106,11 +135,34 @@ function simulate_acoustic_wavefield(model::AcousticModel2D, geometry::Geometry,
 
     f0 = geometry.sources[1].wavelet.f0
     cpml = setup_cpml(grid, config, vp_max, f0; backend=backend)
-    kappa = model.rho .* model.vp .^ 2
-    state = AcousticState2D(nx, ny; backend=backend)
+
+    # Disable PML at the top boundary for free surface
+    if config.free_surface
+        _disable_cpml_left!(cpml.y, config.pml_points)
+    end
+
+    # Ghost cell padding for higher-order FD stencils
+    pad = length(coeffs) - 1
+    nxp, nyp = nx + 2 * pad, ny + 2 * pad
+
+    if pad > 0
+        vp_pad = pad_array(model.vp, pad)
+        rho_pad = pad_array(model.rho, pad)
+        grid_pad = Grid2D(nxp, nyp, dx, dy)
+        model_pad = AcousticModel2D(vp_pad, rho_pad, grid_pad)
+        cpml = pad_cpml(cpml, pad)
+    else
+        model_pad = model
+        rho_pad = model.rho
+        vp_pad = model.vp
+    end
+
+    kappa = rho_pad .* vp_pad .^ 2
+    state = AcousticState2D(nxp, nyp; backend=backend)
 
     rec_indices = snap_receivers(geometry.receivers, grid)
     nrec = length(rec_indices)
+    rec_indices_pad = [(i + pad, j + pad) for (i, j) in rec_indices]
     seismograms = zeros(Float64, nt, nrec)
 
     n_snaps = length(1:save_every:nt)
@@ -120,17 +172,24 @@ function simulate_acoustic_wavefield(model::AcousticModel2D, geometry::Geometry,
     src = geometry.sources[1]
     isrc, jsrc = snap_to_grid(src.x, src.y, grid)
     cp_src = model.vp[isrc, jsrc]
+    isrc_pad, jsrc_pad = isrc + pad, jsrc + pad
     source_ts = compute_source_timeseries(src.wavelet, nt, dt)
 
     for it in 1:nt
-        acoustic_first_derivatives!(state, model, cpml, nx, ny, dx, dy, coeffs)
-        acoustic_second_derivatives!(state, cpml, nx, ny, dx, dy, coeffs)
-        acoustic_time_update!(state, kappa, source_ts[it], isrc, jsrc, dt, nx, ny, cp_src)
-        record_receivers!(seismograms, state.pressure_future, rec_indices, it)
+        acoustic_first_derivatives!(state, model_pad, cpml, nxp, nyp, dx, dy, coeffs)
+        acoustic_second_derivatives!(state, cpml, nxp, nyp, dx, dy, coeffs)
+        acoustic_time_update!(state, kappa, source_ts[it], isrc_pad, jsrc_pad,
+                              dt, nxp, nyp, cp_src; pad=pad)
+
+        if config.free_surface
+            acoustic_apply_free_surface!(state, nxp, nyp, pad)
+        end
+
+        record_receivers!(seismograms, state.pressure_future, rec_indices_pad, it)
 
         if mod(it - 1, save_every) == 0
             snap_idx += 1
-            snapshots[:, :, snap_idx] .= state.pressure_future
+            snapshots[:, :, snap_idx] .= @view state.pressure_future[(pad+1):(pad+nx), (pad+1):(pad+ny)]
         end
 
         state.pressure_past, state.pressure_present, state.pressure_future =

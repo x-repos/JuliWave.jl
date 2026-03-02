@@ -57,3 +57,30 @@ function _get_cuda_array()
         return Array
     end
 end
+
+"""
+    pad_array(arr, pad) -> AbstractMatrix
+
+Pad a 2D array with `pad` ghost cells on each side, replicating boundary
+values into ghost zones (critical for fields like vp/rho that must not be zero).
+Returns the original array unchanged when pad == 0.
+"""
+function pad_array(arr::AbstractMatrix, pad::Int)
+    pad == 0 && return arr
+    nx, ny = size(arr)
+    nxp, nyp = nx + 2 * pad, ny + 2 * pad
+    padded = similar(arr, nxp, nyp)
+    # Copy interior
+    padded[(pad+1):(pad+nx), (pad+1):(pad+ny)] .= arr
+    # Replicate x boundaries into ghost columns (interior y range)
+    for gp in 1:pad
+        padded[gp, (pad+1):(pad+ny)] .= @view arr[1, :]
+        padded[pad+nx+gp, (pad+1):(pad+ny)] .= @view arr[nx, :]
+    end
+    # Replicate y boundaries into ghost rows (full x range, covers corners)
+    for gp in 1:pad
+        padded[:, gp] .= @view padded[:, pad+1]
+        padded[:, pad+ny+gp] .= @view padded[:, pad+ny]
+    end
+    return padded
+end

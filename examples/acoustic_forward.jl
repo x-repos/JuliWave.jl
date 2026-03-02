@@ -6,6 +6,9 @@ Pkg.activate(joinpath(@__DIR__, ".."))
 
 using JuliWave
 
+# Simulation parameters
+space_order = 16
+
 # Grid setup
 nx, ny = 501, 501
 dx, dy = 15, 15  # meters
@@ -27,15 +30,17 @@ receivers = [Receiver(50.0 + i * 10.0, 250.0) for i in 0:19]
 geometry = Geometry([src], receivers)
 
 # Time stepping
-dt = suggest_dt(vp_val, dx, dy; courant_target=0.5)
+dt = suggest_dt(vp_val, dx, dy; courant_target=0.5, space_order=space_order)
 nt = 2000
-config = SimulationConfig(nt, dt; pml_points=10)
+free_surface = true
+config = SimulationConfig(nt, dt; pml_points=10, space_order=space_order, free_surface=free_surface)
 
 println("Grid: $(nx) x $(ny), dx=$(dx) m")
 println("Velocity: $(vp_val) m/s, Density: $(rho_val) kg/m³")
 println("Source: Ricker f0=$(f0) Hz at (750, 750) m")
 println("Time steps: $(nt), dt=$(round(dt*1e3, digits=1)) ms")
-println("Courant number: $(round(check_cfl(vp_val, dt, dx, dy), digits=3))")
+println("Courant number: $(round(check_cfl(vp_val, dt, dx, dy; space_order=space_order), digits=3))")
+println("Free surface: $(free_surface)")
 println()
 
 # Run simulation with wavefield snapshots
@@ -50,6 +55,7 @@ println("Number of snapshots: $(size(snapshots, 3))")
 
 # Save wavefield snapshots as PPM images
 outdir = joinpath(@__DIR__, "output", "acoustic_forward")
+rm(outdir; force=true, recursive=true)
 mkpath(outdir)
 
 function save_ppm(filename, field; power=0.3)

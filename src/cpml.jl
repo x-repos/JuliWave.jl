@@ -148,3 +148,56 @@ function _compute_cpml_1d(n::Int, delta::Float64, npoints::Int, npower::Float64,
         backend(a_half_arr), backend(b_half_arr), backend(K_half_arr)
     )
 end
+
+"""
+    pad_cpml(cpml, pad) -> CPML2D
+
+Pad CPML coefficient arrays with `pad` neutral entries on each side.
+Neutral values (a=0, b=1, K=1) mean no damping in ghost zones.
+Returns the original CPML unchanged when pad == 0.
+"""
+function pad_cpml(cpml::CPML2D, pad::Int)
+    pad == 0 && return cpml
+    CPML2D(_pad_cpml_1d(cpml.x, pad), _pad_cpml_1d(cpml.y, pad))
+end
+
+function _pad_cpml_1d(c::CPMLCoefficients1D, pad::Int)
+    CPMLCoefficients1D(
+        _pad_vector(c.a, pad, 0.0),
+        _pad_vector(c.b, pad, 1.0),
+        _pad_vector(c.K, pad, 1.0),
+        _pad_vector(c.a_half, pad, 0.0),
+        _pad_vector(c.b_half, pad, 1.0),
+        _pad_vector(c.K_half, pad, 1.0)
+    )
+end
+
+"""
+    _disable_cpml_left!(coeffs, npoints)
+
+Zero out PML damping at the left (top) edge of a 1D CPML profile so that
+waves reflect freely instead of being absorbed.  Sets a=0, b=1, K=1 for
+grid indices 1:npoints+1 and half-grid indices 1:npoints.
+"""
+function _disable_cpml_left!(coeffs::CPMLCoefficients1D, npoints::Int)
+    for i in 1:(npoints + 1)
+        coeffs.a[i] = 0.0
+        coeffs.b[i] = 1.0
+        coeffs.K[i] = 1.0
+    end
+    for i in 1:npoints
+        coeffs.a_half[i] = 0.0
+        coeffs.b_half[i] = 1.0
+        coeffs.K_half[i] = 1.0
+    end
+    return nothing
+end
+
+function _pad_vector(v::AbstractVector, pad::Int, neutral::Float64)
+    n = length(v)
+    np = n + 2 * pad
+    vp = similar(v, np)
+    fill!(vp, neutral)
+    vp[(pad+1):(pad+n)] .= v
+    return vp
+end

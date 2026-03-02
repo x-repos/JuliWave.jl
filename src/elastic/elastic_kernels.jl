@@ -143,22 +143,68 @@ function elastic_apply_source!(state::ElasticState2D, rho::AbstractMatrix,
 end
 
 """
-    elastic_apply_bc!(state, nx, ny)
+    elastic_apply_pressure_source!(state, source_val, isrc, jsrc, dt)
 
-Apply Dirichlet (rigid) boundary conditions on all edges.
+Inject a pressure (explosive) source at the given grid point by adding
+equally to the normal stress components σ_xx and σ_yy.
 """
-function elastic_apply_bc!(state::ElasticState2D, nx::Int, ny::Int)
-    @inbounds for j in 1:ny
-        state.vx[1, j] = 0.0
-        state.vx[nx, j] = 0.0
-        state.vy[1, j] = 0.0
-        state.vy[nx, j] = 0.0
+function elastic_apply_pressure_source!(state::ElasticState2D,
+                                         source_val::Float64,
+                                         isrc::Int, jsrc::Int, dt::Float64)
+    state.sigma_xx[isrc, jsrc] += source_val * dt
+    state.sigma_yy[isrc, jsrc] += source_val * dt
+    return nothing
+end
+
+"""
+    elastic_apply_bc!(state, nx, ny; pad=0, free_surface=false)
+
+Apply Dirichlet (rigid) boundary conditions at physical boundaries
+(offset by `pad` ghost cells).  When `free_surface=true`, velocities
+at the top boundary (lo_y) are left free.
+"""
+function elastic_apply_bc!(state::ElasticState2D, nx::Int, ny::Int;
+                           pad::Int=0, free_surface::Bool=false)
+    lo_x, hi_x = pad + 1, nx - pad
+    lo_y, hi_y = pad + 1, ny - pad
+    @inbounds for j in lo_y:hi_y
+        state.vx[lo_x, j] = 0.0
+        state.vx[hi_x, j] = 0.0
+        state.vy[lo_x, j] = 0.0
+        state.vy[hi_x, j] = 0.0
     end
+    @inbounds for i in lo_x:hi_x
+        if !free_surface
+            state.vx[i, lo_y] = 0.0
+            state.vy[i, lo_y] = 0.0
+        end
+        state.vx[i, hi_y] = 0.0
+        state.vy[i, hi_y] = 0.0
+    end
+    return nothing
+end
+
+"""
+    elastic_apply_free_surface!(state, nx, ny, pad)
+
+Apply stress-free boundary condition at the top surface (j = pad+1).
+Sets σ_yy = 0 at the surface and mirrors stresses anti-symmetrically
+into ghost cells above using the DENISE method-of-imaging formulas:
+  σ_yy[i, j_surf - m] = -σ_yy[i, j_surf + m]
+  σ_xy[i, j_surf - m] = -σ_xy[i, j_surf + m - 1]   (half-grid offset)
+"""
+function elastic_apply_free_surface!(state::ElasticState2D, nx::Int, ny::Int, pad::Int)
+    j_surf = pad + 1
+    # Zero normal stress at the surface
     @inbounds for i in 1:nx
-        state.vx[i, 1] = 0.0
-        state.vx[i, ny] = 0.0
-        state.vy[i, 1] = 0.0
-        state.vy[i, ny] = 0.0
+        state.sigma_yy[i, j_surf] = 0.0
+    end
+    # Mirror stresses into ghost cells
+    @inbounds for m in 1:pad
+        for i in 1:nx
+            state.sigma_yy[i, j_surf - m] = -state.sigma_yy[i, j_surf + m]
+            state.sigma_xy[i, j_surf - m] = -state.sigma_xy[i, j_surf + m - 1]
+        end
     end
     return nothing
 end

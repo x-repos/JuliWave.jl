@@ -24,6 +24,9 @@ include("elastic/elastic_forward.jl")
 # FWI
 include("fwi.jl")
 
+# I/O
+include("io.jl")
+
 # Exports - Types
 export Grid2D, SimulationConfig
 export AbstractWavelet, RickerWavelet, GaussianDerivativeWavelet
@@ -51,6 +54,9 @@ export l2_misfit, compute_gradient_fd, fwi
 
 # Exports - FD coefficients
 export fd_coefficients, fd_stencil_x, fd_stencil_y
+
+# Exports - I/O
+export save_npz, load_npz, save_seismograms, load_seismograms
 
 # Exports - Utils
 export check_cfl, suggest_dt, select_backend

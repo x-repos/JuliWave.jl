@@ -50,9 +50,10 @@ struct SimulationConfig
     pml_npower::Float64
     pml_kmax::Float64
     space_order::Int
+    free_surface::Bool
 end
 
 function SimulationConfig(nt, dt; pml_points=10, pml_Rcoef=0.001, pml_npower=2.0, pml_kmax=1.0,
-                          space_order=2)
-    SimulationConfig(nt, dt, pml_points, pml_Rcoef, pml_npower, pml_kmax, space_order)
+                          space_order=2, free_surface=false)
+    SimulationConfig(nt, dt, pml_points, pml_Rcoef, pml_npower, pml_kmax, space_order, free_surface)
 end

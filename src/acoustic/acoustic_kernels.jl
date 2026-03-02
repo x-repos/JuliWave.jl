@@ -92,20 +92,23 @@ function acoustic_second_derivatives!(state::AcousticState2D, cpml::CPML2D,
 end
 
 """
-    acoustic_time_update!(state, kappa, source_val, isrc, jsrc, dt, nx, ny, cp_src)
+    acoustic_time_update!(state, kappa, source_val, isrc, jsrc, dt, nx, ny, cp_src; pad=0)
 
 Apply the time evolution scheme:
     p_future = -p_past + 2*p_present + dt² * (d²p * kappa + 4π * cp² * source * δ)
-Then apply Dirichlet BCs.
+Then apply Dirichlet BCs at physical boundaries (offset by `pad` ghost cells).
 """
 function acoustic_time_update!(state::AcousticState2D, kappa::AbstractMatrix,
                                source_val::Float64, isrc::Int, jsrc::Int,
-                               dt::Float64, nx::Int, ny::Int, cp_src::Float64)
+                               dt::Float64, nx::Int, ny::Int, cp_src::Float64;
+                               pad::Int=0)
     dt2 = dt * dt
     src_factor = 4.0 * π * cp_src^2 * source_val
+    lo_x, hi_x = pad + 1, nx - pad
+    lo_y, hi_y = pad + 1, ny - pad
 
-    @inbounds for j in 1:ny
-        for i in 1:nx
+    @inbounds for j in lo_y:hi_y
+        for i in lo_x:hi_x
             laplacian = state.dpressurexx_dx[i, j] + state.dpressureyy_dy[i, j]
             src_contrib = (i == isrc && j == jsrc) ? src_factor : 0.0
             state.pressure_future[i, j] = -state.pressure_past[i, j] +
@@ -114,15 +117,35 @@ function acoustic_time_update!(state::AcousticState2D, kappa::AbstractMatrix,
         end
     end
 
-    # Dirichlet boundary conditions
-    @inbounds for j in 1:ny
-        state.pressure_future[1, j] = 0.0
-        state.pressure_future[nx, j] = 0.0
+    # Dirichlet boundary conditions at physical boundaries
+    @inbounds for j in lo_y:hi_y
+        state.pressure_future[lo_x, j] = 0.0
+        state.pressure_future[hi_x, j] = 0.0
     end
-    @inbounds for i in 1:nx
-        state.pressure_future[i, 1] = 0.0
-        state.pressure_future[i, ny] = 0.0
+    @inbounds for i in lo_x:hi_x
+        state.pressure_future[i, lo_y] = 0.0
+        state.pressure_future[i, hi_y] = 0.0
     end
 
+    return nothing
+end
+
+"""
+    acoustic_apply_free_surface!(state, nx, ny, pad)
+
+Apply free-surface boundary condition at the top (j = pad+1).
+Sets p = 0 at the surface and mirrors pressure anti-symmetrically into
+the ghost cells above for higher-order stencil accuracy.
+"""
+function acoustic_apply_free_surface!(state::AcousticState2D, nx::Int, ny::Int, pad::Int)
+    j_surf = pad + 1
+    @inbounds for i in 1:nx
+        state.pressure_future[i, j_surf] = 0.0
+    end
+    @inbounds for m in 1:pad
+        for i in 1:nx
+            state.pressure_future[i, j_surf - m] = -state.pressure_future[i, j_surf + m]
+        end
+    end
     return nothing
 end

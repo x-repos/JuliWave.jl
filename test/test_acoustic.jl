@@ -57,4 +57,40 @@ using JuliWave
         @test size(snapshots, 3) == length(1:50:nt)
         @test !any(isnan, snapshots)
     end
+
+    @testset "Free surface" begin
+        config_fs = SimulationConfig(nt, dt; pml_points=10, free_surface=true)
+
+        @testset "Basic simulation runs" begin
+            seismograms = simulate_acoustic(model, geometry, config_fs)
+            @test size(seismograms) == (nt, 2)
+            @test !any(isnan, seismograms)
+            @test !any(isinf, seismograms)
+            @test maximum(abs.(seismograms)) < 1e25
+        end
+
+        @testset "Wavefield simulation" begin
+            seismograms, snapshots = simulate_acoustic_wavefield(model, geometry, config_fs; save_every=50)
+            @test size(snapshots, 1) == nx
+            @test size(snapshots, 2) == ny
+            @test size(snapshots, 3) == length(1:50:nt)
+            @test !any(isnan, snapshots)
+        end
+    end
+
+    @testset "Higher-order FD (space_order=$order)" for order in [4, 8]
+        dt_ho = suggest_dt(vp_val, dx, dy; courant_target=0.4, space_order=order)
+        config_ho = SimulationConfig(nt, dt_ho; pml_points=10, space_order=order)
+
+        seismograms = simulate_acoustic(model, geometry, config_ho)
+        @test size(seismograms) == (nt, 2)
+        @test !any(isnan, seismograms)
+        @test !any(isinf, seismograms)
+        @test maximum(abs.(seismograms)) < 1e25
+
+        seis_wf, snaps = simulate_acoustic_wavefield(model, geometry, config_ho; save_every=50)
+        @test size(snaps, 1) == nx
+        @test size(snaps, 2) == ny
+        @test !any(isnan, snaps)
+    end
 end
